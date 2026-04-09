@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Safari Audio{% endblock %}</title>
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    {% block content %}{% endblock %}
+    <script>
+    (function () {
+        var AudioCtor = window.AudioContext || window.webkitAudioContext;
+        var SOUND_URLS = {
+            correct: 'https://d3iyagsnytq9oz.cloudfront.net/static/sfx/CORRECT%20ANSWER.mp3',
+            wrong: 'https://d3iyagsnytq9oz.cloudfront.net/static/sfx/INCORRECT%20ANSWER.mp3'
+        };
+        var state = {
+            supported: !!AudioCtor,
+            initialized: false,
+            unlocked: false,
+            contextState: AudioCtor ? 'not-created' : 'unavailable',
+            lastError: 'none',
+            source: 'url+fallback'
+        };
+
+        var ctx = null;
+        var unlockBound = false;
+        var players = {
+            correct: null,
+            wrong: null
+        };
+
+        function ensureContext() {
+            if (!state.supported) return null;
+            if (ctx) return ctx;
+            try {
+                ctx = new AudioCtor();
+                state.contextState = ctx.state;
+                ctx.addEventListener('statechange', function () {
+                    state.contextState = ctx.state;
+                });
+                return ctx;
+            } catch (err) {
+                state.lastError = err && err.message ? err.message : 'AudioContext creation failed';
+                return null;
+            }
+        }
+
+        function playEnvelope(freq, wave, startAt, duration, gainLevel) {
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.type = wave || 'sine';
+            osc.frequency.setValueAtTime(freq, startAt);
+            gain.gain.setValueAtTime(0.0001, startAt);
+            gain.gain.exponentialRampToValueAtTime(gainLevel || 0.2, startAt + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(startAt);
+            osc.stop(startAt + duration + 0.03);
+        }
+
+        function buildPlayer(url) {
+            try {
+                var el = new Audio(url);
+                el.preload = 'auto';
+                el.playsInline = true;
+                return el;
+            } catch (err) {
+                state.lastError = err && err.message ? err.message : 'Audio element creation failed';
+                return null;
+            }
+        }
+
+        function ensurePlayers() {
+            if (!players.correct) players.correct = buildPlayer(SOUND_URLS.correct);
+            if (!players.wrong) players.wrong = buildPlayer(SOUND_URLS.wrong);
+        }
+
+        function tryPlayUrl(kind) {
+            ensurePlayers();
+            var p = players[kind];
+            if (!p) return Promise.resolve(false);
+
+            try {
+                p.pause();
+                p.currentTime = 0;
+            } catch (err) {
+                state.lastError = err && err.message ? err.message : 'Audio reset failed';
+            }
+
+            var playPromise;
+            try {
+                playPromise = p.play();
+            } catch (err) {
+                state.lastError = err && err.message ? err.message : 'Audio play threw synchronously';
+                return Promise.resolve(false);
+            }
+
+            if (!playPromise || typeof playPromise.then !== 'function') {
+                return Promise.resolve(true);
+            }
+
+            return playPromise.then(function () {
+                return true;
+            }).catch(function (err) {
+                state.lastError = err && err.message ? err.message : 'URL audio play failed';
+                return false;
+            });
+        }
+
+        function playCorrectFallback() {
+            return resumeContext().then(function (ok) {
+                if (!ok || !ctx) return false;
+                var t = ctx.currentTime;
+                playEnvelope(523.25, 'sine', t, 0.14, 0.22);
+                playEnvelope(659.25, 'sine', t + 0.10, 0.14, 0.20);
+                playEnvelope(783.99, 'triangle', t + 0.20, 0.18, 0.18);
+                return true;
+            });
+        }
+
+        function playWrongFallback() {
+            return resumeContext().then(function (ok) {
+                if (!ok || !ctx) return false;
+                var t = ctx.currentTime;
+                playEnvelope(320, 'sawtooth', t, 0.16, 0.16);
+                playEnvelope(220, 'sawtooth', t + 0.11, 0.22, 0.17);
+                return true;
+            });
+        }
+
+        function resumeContext() {
+            var localCtx = ensureContext();
+            if (!localCtx) return Promise.resolve(false);
+            if (localCtx.state === 'running') {
+                state.contextState = localCtx.state;
+                state.unlocked = true;
+                return Promise.resolve(true);
+            }
+            return localCtx.resume().then(function () {
+                state.contextState = localCtx.state;
+                state.unlocked = localCtx.state === 'running';
+                return state.unlocked;
+            }).catch(function (err) {
+                state.lastError = err && err.message ? err.message : 'resume failed';
+                return false;
+            });
+        }
+
+        function bindUnlockListeners() {
+            if (unlockBound) return;
+            unlockBound = true;
+
+            var tryUnlock = function () { resumeContext(); };
+            ['pointerdown', 'touchend', 'click', 'keydown'].forEach(function (evtName) {
+                document.addEventListener(evtName, tryUnlock, { passive: true });
+            });
+
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) resumeContext();
+            });
+
+            window.addEventListener('pageshow', function () { resumeContext(); });
+        }
+
+        var SoundManager = {
+            init: function () {
+                if (state.initialized) return;
+                state.initialized = true;
+                ensurePlayers();
+                bindUnlockListeners();
+            },
+            unlock: function () {
+                return resumeContext();
+            },
+            playCorrect: function () {
+                return tryPlayUrl('correct').then(function (ok) {
+                    if (ok) return true;
+                    return playCorrectFallback();
+                });
+            },
+            playWrong: function () {
+                return tryPlayUrl('wrong').then(function (ok) {
+                    if (ok) return true;
+                    return playWrongFallback();
+                });
+            },
+            getState: function () {
+                return {
+                    supported: state.supported,
+                    initialized: state.initialized,
+                    unlocked: state.unlocked,
+                    contextState: state.contextState,
+                    lastError: state.lastError,
+                    source: state.source
+                };
+            }
+        };
+
+        window.SoundManager = SoundManager;
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function () { SoundManager.init(); });
+        } else {
+            SoundManager.init();
+        }
+    })();
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

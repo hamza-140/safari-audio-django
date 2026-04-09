@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+
+{% block title %}Safari Audio Test{% endblock %}
+
+{% block head_extra %}
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #f2f2f7; min-height: 100vh;
+        padding: 24px 16px; color: #1c1c1e;
+    }
+    h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { font-size: 14px; color: #636366; margin-bottom: 20px; }
+
+    #banner {
+        background: #fff3cd; border: 1px solid #ffc107;
+        border-radius: 12px; padding: 14px 16px;
+        font-size: 14px; color: #664d03;
+        margin-bottom: 20px;
+        display: flex; align-items: center; gap: 10px;
+    }
+    #banner.hidden { display: none; }
+    .blink { width: 9px; height: 9px; border-radius: 50%; background: #ffc107; flex-shrink: 0; animation: blink 1.2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+    .section-label {
+        font-size: 12px; font-weight: 600; color: #636366;
+        text-transform: uppercase; letter-spacing: .05em;
+        margin-bottom: 10px; margin-top: 20px;
+    }
+
+    .status-box {
+        background: #fff; border-radius: 14px;
+        padding: 14px 16px; margin-bottom: 4px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.07);
+    }
+    .status-row {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 13px; padding: 5px 0;
+        border-bottom: 1px solid #f2f2f7;
+    }
+    .status-row:last-child { border-bottom: none; }
+    .sv { font-weight: 500; }
+    .sv.ok   { color: #34c759; }
+    .sv.warn { color: #ff9500; }
+    .sv.err  { color: #ff3b30; }
+
+    .tip {
+        background: #e8f4fd; border-radius: 10px;
+        padding: 12px 14px; font-size: 13px; color: #0c5e8c;
+        margin-bottom: 10px; line-height: 1.5;
+    }
+
+    .card {
+        background: #fff; border-radius: 14px;
+        padding: 16px; margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.07);
+        display: flex; align-items: center; gap: 14px;
+    }
+    .card-icon {
+        width: 46px; height: 46px; border-radius: 10px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 15px; font-weight: 700; flex-shrink: 0; color: #fff;
+    }
+    .card-info { flex: 1; min-width: 0; }
+    .card-name { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+    .card-desc { font-size: 12px; color: #8e8e93; }
+
+    .prog-wrap { margin-top: 8px; display: none; }
+    .prog-wrap.show { display: block; }
+    .prog-track { width: 100%; height: 3px; background: #e5e5ea; border-radius: 99px; overflow: hidden; }
+    .prog-fill { height: 100%; background: #007aff; border-radius: 99px; width: 0%; transition: width .2s linear; }
+    .prog-time { font-size: 11px; color: #aeaeb2; margin-top: 4px; }
+
+    .play-btn {
+        width: 46px; height: 46px; border-radius: 50%;
+        border: none; background: #007aff; color: #fff;
+        font-size: 17px; cursor: pointer; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        -webkit-tap-highlight-color: transparent;
+        transition: transform .1s, opacity .15s;
+    }
+    .play-btn:active { transform: scale(.91); opacity: .8; }
+    .play-btn.playing { background: #ff3b30; }
+
+    .log-wrap {
+        background: #1c1c1e; border-radius: 12px;
+        padding: 14px 16px; max-height: 180px; overflow-y: auto;
+    }
+    .log-line {
+        font-family: 'SF Mono', Menlo, monospace;
+        font-size: 11.5px; line-height: 1.6; color: #8e8e93;
+    }
+    .log-line.ok   { color: #32d74b; }
+    .log-line.err  { color: #ff453a; }
+    .log-line.warn { color: #ffd60a; }
+    .log-line.info { color: #64d2ff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>Safari Audio Test</h1>
+<p class="subtitle">Synthesised tones - no external files, no CORS</p>
+
+<div id="banner">
+    <div class="blink"></div>
+    <span id="banner-msg">Tap any button - Safari needs one user gesture before audio plays.</span>
+</div>
+
+<div class="section-label">Status</div>
+<div class="status-box">
+    <div class="status-row"><span>Web Audio API</span><span class="sv" id="st-api">checking...</span></div>
+    <div class="status-row"><span>Context state</span><span class="sv" id="st-ctx">-</span></div>
+    <div class="status-row"><span>Gesture unlocked</span><span class="sv" id="st-gest">waiting</span></div>
+    <div class="status-row"><span>Now playing</span><span class="sv" id="st-play">nothing</span></div>
+    <div class="status-row"><span>Last error</span><span class="sv" id="st-err">none</span></div>
+</div>
+
+<div class="section-label">Sounds</div>
+
+<div class="tip">
+    These synthesised tones exercise the exact same Safari gesture-unlock, AudioContext resumption, and interruption-recovery paths that your Django MP3 player will hit.
+</div>
+
+<div class="card">
+    <div class="card-icon" style="background:#5856d6;">A4</div>
+    <div class="card-info">
+        <div class="card-name">Sine tone - 440 Hz</div>
+        <div class="card-desc">Pure sine - 4 s - tests basic play/pause</div>
+        <div class="prog-wrap" id="pw0"><div class="prog-track"><div class="prog-fill" id="pf0"></div></div><div class="prog-time" id="pt0"></div></div>
+    </div>
+    <button class="play-btn" id="btn0" onclick="playSound(0)">&#9654;</button>
+</div>
+
+<div class="card">
+    <div class="card-icon" style="background:#34c759;">CEG</div>
+    <div class="card-info">
+        <div class="card-name">Major chord - C E G</div>
+        <div class="card-desc">3 oscillators - 4 s - tests multi-node</div>
+        <div class="prog-wrap" id="pw1"><div class="prog-track"><div class="prog-fill" id="pf1"></div></div><div class="prog-time" id="pt1"></div></div>
+    </div>
+    <button class="play-btn" id="btn1" onclick="playSound(1)">&#9654;</button>
+</div>
+
+<div class="card">
+    <div class="card-icon" style="background:#ff9500;">~Hz</div>
+    <div class="card-info">
+        <div class="card-name">Frequency sweep - 200 to 800 Hz</div>
+        <div class="card-desc">Sawtooth ramp - 4 s - tests modulation</div>
+        <div class="prog-wrap" id="pw2"><div class="prog-track"><div class="prog-fill" id="pf2"></div></div><div class="prog-time" id="pt2"></div></div>
+    </div>
+    <button class="play-btn" id="btn2" onclick="playSound(2)">&#9654;</button>
+</div>
+
+<div class="card">
+    <div class="card-icon" style="background:#ff2d55;">do</div>
+    <div class="card-info">
+        <div class="card-name">Melody - do re mi fa sol la si</div>
+        <div class="card-desc">7 sequential notes - 3.5 s - tests scheduling</div>
+        <div class="prog-wrap" id="pw3"><div class="prog-track"><div class="prog-fill" id="pf3"></div></div><div class="prog-time" id="pt3"></div></div>
+    </div>
+    <button class="play-btn" id="btn3" onclick="playSound(3)">&#9654;</button>
+</div>
+
+<div class="section-label">Console log</div>
+<div class="log-wrap" id="log"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var ctx = null;
+    var activeNodes = [];
+    var currentIdx = -1;
+    var startedAt = 0;
+    var rafId = null;
+    var unlocked = false;
+
+    var SOUNDS = [
+        { name: 'Sine 440Hz',   dur: 4.0 },
+        { name: 'Major chord',  dur: 4.0 },
+        { name: 'Sweep',        dur: 4.0 },
+        { name: 'Melody',       dur: 3.5 }
+    ];
+
+    function log(msg, type) {
+        var box = document.getElementById('log');
+        var t = new Date().toLocaleTimeString('en', { hour12: false });
+        var d = document.createElement('div');
+        d.className = 'log-line ' + (type || '');
+        d.textContent = '[' + t + '] ' + msg;
+        box.appendChild(d);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function sv(id, val, cls) {
+        var el = document.getElementById(id);
+        el.textContent = val;
+        el.className = 'sv ' + (cls || '');
+    }
+
+    function ensureCtx() {
+        if (ctx) return true;
+        try {
+            ctx = new (window.AudioContext || window.webkitAudioContext)();
+            sv('st-api', 'yes', 'ok');
+            sv('st-ctx', ctx.state, ctx.state === 'running' ? 'ok' : 'warn');
+            log('AudioContext created - state: ' + ctx.state, 'ok');
+
+            ctx.addEventListener('statechange', function () {
+                var s = ctx.state;
+                sv('st-ctx', s, s === 'running' ? 'ok' : 'warn');
+                log('Context state to ' + s, s === 'running' ? 'ok' : 'warn');
+                if (s === 'interrupted' || s === 'suspended') {
+                    document.getElementById('banner').classList.remove('hidden');
+                    document.getElementById('banner-msg').textContent = 'Audio interrupted - tap any button to resume.';
+                }
+            });
+            return true;
+        } catch (e) {
+            sv('st-api', 'no - ' + e.message, 'err');
+            log('AudioContext failed: ' + e.message, 'err');
+            return false;
+        }
+    }
+
+    function resume(cb) {
+        if (!ensureCtx()) return;
+        if (ctx.state === 'running') {
+            markUnlocked();
+            cb();
+        } else {
+            log('Calling ctx.resume()...', 'warn');
+            ctx.resume().then(function () {
+                sv('st-ctx', 'running', 'ok');
+                markUnlocked();
+                log('ctx.resume() resolved', 'ok');
+                cb();
+            }).catch(function (e) {
+                log('ctx.resume() failed: ' + e.message, 'err');
+                sv('st-err', e.message, 'err');
+            });
+        }
+    }
+
+    function markUnlocked() {
+        if (!unlocked) {
+            unlocked = true;
+            sv('st-gest', 'yes', 'ok');
+            document.getElementById('banner').classList.add('hidden');
+            log('Gesture unlock confirmed', 'ok');
+        }
+    }
+
+    function stopAll() {
+        cancelAnimationFrame(rafId);
+        activeNodes.forEach(function (n) { try { n.stop(0); } catch (e) {} });
+        activeNodes = [];
+        if (currentIdx >= 0) {
+            document.getElementById('btn' + currentIdx).innerHTML = '&#9654;';
+            document.getElementById('btn' + currentIdx).className = 'play-btn';
+            document.getElementById('pw' + currentIdx).className = 'prog-wrap';
+        }
+        sv('st-play', 'nothing', '');
+        currentIdx = -1;
+    }
+
+    function osc(freq, type, g, t0, dur, vol) {
+        var gain = ctx.createGain();
+        gain.gain.setValueAtTime(0, t0);
+        gain.gain.linearRampToValueAtTime(vol || 0.3, t0 + 0.02);
+        gain.gain.setValueAtTime(vol || 0.3, t0 + dur - 0.06);
+        gain.gain.linearRampToValueAtTime(0, t0 + dur);
+        gain.connect(g);
+
+        var o = ctx.createOscillator();
+        o.type = type || 'sine';
+        o.frequency.setValueAtTime(freq, t0);
+        o.connect(gain);
+        o.start(t0);
+        o.stop(t0 + dur);
+        return o;
+    }
+
+    function startProgress(idx, dur) {
+        var pw = document.getElementById('pw' + idx);
+        var pf = document.getElementById('pf' + idx);
+        var pt = document.getElementById('pt' + idx);
+        pw.className = 'prog-wrap show';
+        function tick() {
+            if (currentIdx !== idx) return;
+            var elapsed = Math.min(ctx.currentTime - startedAt, dur);
+            pf.style.width = (elapsed / dur * 100).toFixed(1) + '%';
+            pt.textContent = elapsed.toFixed(1) + ' / ' + dur.toFixed(1) + 's';
+            if (elapsed < dur) rafId = requestAnimationFrame(tick);
+        }
+        rafId = requestAnimationFrame(tick);
+    }
+
+    window.playSound = function (idx) {
+        resume(function () {
+            if (currentIdx === idx) { stopAll(); log('Stopped', 'info'); return; }
+            stopAll();
+            currentIdx = idx;
+            startedAt = ctx.currentTime;
+
+            var dur = SOUNDS[idx].dur;
+            var name = SOUNDS[idx].name;
+            var btn = document.getElementById('btn' + idx);
+            btn.innerHTML = '&#9646;&#9646;';
+            btn.className = 'play-btn playing';
+            sv('st-play', name, 'ok');
+            sv('st-err', 'none', '');
+            log('Playing: ' + name, 'ok');
+
+            try {
+                var master = ctx.createGain();
+                master.gain.setValueAtTime(0.8, startedAt);
+                master.connect(ctx.destination);
+
+                if (idx === 0) {
+                    activeNodes.push(osc(440, 'sine', master, startedAt, dur, 0.4));
+                }
+                else if (idx === 1) {
+                    activeNodes.push(osc(261.63, 'sine', master, startedAt, dur, 0.22));
+                    activeNodes.push(osc(329.63, 'sine', master, startedAt, dur, 0.22));
+                    activeNodes.push(osc(392.00, 'sine', master, startedAt, dur, 0.22));
+                }
+                else if (idx === 2) {
+                    var g2 = ctx.createGain();
+                    g2.gain.setValueAtTime(0.3, startedAt);
+                    g2.connect(master);
+                    var sw = ctx.createOscillator();
+                    sw.type = 'sawtooth';
+                    sw.frequency.setValueAtTime(200, startedAt);
+                    sw.frequency.linearRampToValueAtTime(800, startedAt + dur);
+                    sw.connect(g2);
+                    sw.start(startedAt);
+                    sw.stop(startedAt + dur);
+                    activeNodes.push(sw);
+                }
+                else if (idx === 3) {
+                    var freqs = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88];
+                    var step = dur / freqs.length;
+                    freqs.forEach(function (f, i) {
+                        activeNodes.push(osc(f, 'sine', master, startedAt + i * step, step * 0.82, 0.38));
+                    });
+                }
+
+                startProgress(idx, dur);
+
+                var endTimer = setTimeout(function () {
+                    if (currentIdx === idx) {
+                        log('Finished: ' + name, 'info');
+                        stopAll();
+                    }
+                }, (dur + 0.3) * 1000);
+
+                activeNodes.push({ stop: function () { clearTimeout(endTimer); } });
+
+            } catch (e) {
+                log('Error: ' + e.message, 'err');
+                sv('st-err', e.message, 'err');
+                stopAll();
+            }
+        });
+    };
+
+    var supported = !!(window.AudioContext || window.webkitAudioContext);
+    sv('st-api', supported ? 'yes' : 'no', supported ? 'ok' : 'err');
+    log('Page ready - ' + (supported ? 'Web Audio supported' : 'Web Audio NOT supported'), supported ? 'info' : 'err');
+    log('Tap a button to unlock Safari audio.', 'warn');
+})();
+</script>
+{% endblock %}
