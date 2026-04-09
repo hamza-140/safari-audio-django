@@ -21,7 +21,9 @@
             unlocked: false,
             contextState: AudioCtor ? 'not-created' : 'unavailable',
             lastError: 'none',
-            source: 'url+fallback'
+            source: 'url+fallback',
+            lastPlaybackSource: 'none',
+            logs: []
         };
 
         var ctx = null;
@@ -31,18 +33,34 @@
             wrong: null
         };
 
+        function pushLog(message, level) {
+            var entry = {
+                time: new Date().toLocaleTimeString('en', { hour12: false }),
+                message: message,
+                level: level || 'info'
+            };
+            state.logs.push(entry);
+            if (state.logs.length > 200) {
+                state.logs.shift();
+            }
+            window.dispatchEvent(new CustomEvent('soundmanager:log', { detail: entry }));
+        }
+
         function ensureContext() {
             if (!state.supported) return null;
             if (ctx) return ctx;
             try {
                 ctx = new AudioCtor();
                 state.contextState = ctx.state;
+                pushLog('AudioContext created: ' + ctx.state, 'ok');
                 ctx.addEventListener('statechange', function () {
                     state.contextState = ctx.state;
+                    pushLog('Context state changed to ' + ctx.state, ctx.state === 'running' ? 'ok' : 'warn');
                 });
                 return ctx;
             } catch (err) {
                 state.lastError = err && err.message ? err.message : 'AudioContext creation failed';
+                pushLog('AudioContext failed: ' + state.lastError, 'err');
                 return null;
             }
         }
@@ -66,9 +84,13 @@
                 var el = new Audio(url);
                 el.preload = 'auto';
                 el.playsInline = true;
+                el.setAttribute('playsinline', '');
+                el.setAttribute('webkit-playsinline', '');
+                el.load();
                 return el;
             } catch (err) {
                 state.lastError = err && err.message ? err.message : 'Audio element creation failed';
+                pushLog('Audio player creation failed: ' + state.lastError, 'err');
                 return null;
             }
         }
@@ -78,9 +100,21 @@
             if (!players.wrong) players.wrong = buildPlayer(SOUND_URLS.wrong);
         }
 
+        function createPlaybackInstance(kind) {
+            var base = players[kind];
+            if (!base) return null;
+            var p = base.cloneNode();
+            p.preload = 'auto';
+            p.playsInline = true;
+            p.setAttribute('playsinline', '');
+            p.setAttribute('webkit-playsinline', '');
+            p.currentTime = 0;
+            return p;
+        }
+
         function tryPlayUrl(kind) {
             ensurePlayers();
-            var p = players[kind];
+            var p = createPlaybackInstance(kind);
             if (!p) return Promise.resolve(false);
 
             try {
@@ -103,9 +137,12 @@
             }
 
             return playPromise.then(function () {
+                state.lastPlaybackSource = 'url';
+                pushLog('Played ' + kind + ' from URL', 'ok');
                 return true;
             }).catch(function (err) {
                 state.lastError = err && err.message ? err.message : 'URL audio play failed';
+                pushLog('URL playback failed for ' + kind + ': ' + state.lastError, 'warn');
                 return false;
             });
         }
@@ -117,6 +154,8 @@
                 playEnvelope(523.25, 'sine', t, 0.14, 0.22);
                 playEnvelope(659.25, 'sine', t + 0.10, 0.14, 0.20);
                 playEnvelope(783.99, 'triangle', t + 0.20, 0.18, 0.18);
+                state.lastPlaybackSource = 'fallback';
+                pushLog('Played correct via fallback synth', 'warn');
                 return true;
             });
         }
@@ -127,6 +166,8 @@
                 var t = ctx.currentTime;
                 playEnvelope(320, 'sawtooth', t, 0.16, 0.16);
                 playEnvelope(220, 'sawtooth', t + 0.11, 0.22, 0.17);
+                state.lastPlaybackSource = 'fallback';
+                pushLog('Played wrong via fallback synth', 'warn');
                 return true;
             });
         }
@@ -139,12 +180,15 @@
                 state.unlocked = true;
                 return Promise.resolve(true);
             }
+            pushLog('Attempting context resume', 'info');
             return localCtx.resume().then(function () {
                 state.contextState = localCtx.state;
                 state.unlocked = localCtx.state === 'running';
+                pushLog('Context resumed to ' + localCtx.state, state.unlocked ? 'ok' : 'warn');
                 return state.unlocked;
             }).catch(function (err) {
                 state.lastError = err && err.message ? err.message : 'resume failed';
+                pushLog('Context resume failed: ' + state.lastError, 'err');
                 return false;
             });
         }
@@ -171,18 +215,23 @@
                 state.initialized = true;
                 ensurePlayers();
                 bindUnlockListeners();
+                pushLog('SoundManager initialized', 'info');
             },
             unlock: function () {
                 return resumeContext();
             },
             playCorrect: function () {
-                return tryPlayUrl('correct').then(function (ok) {
+                return resumeContext().then(function () {
+                    return tryPlayUrl('correct');
+                }).then(function (ok) {
                     if (ok) return true;
                     return playCorrectFallback();
                 });
             },
             playWrong: function () {
-                return tryPlayUrl('wrong').then(function (ok) {
+                return resumeContext().then(function () {
+                    return tryPlayUrl('wrong');
+                }).then(function (ok) {
                     if (ok) return true;
                     return playWrongFallback();
                 });
@@ -194,7 +243,9 @@
                     unlocked: state.unlocked,
                     contextState: state.contextState,
                     lastError: state.lastError,
-                    source: state.source
+                    source: state.source,
+                    lastPlaybackSource: state.lastPlaybackSource,
+                    logs: state.logs.slice()
                 };
             }
         };

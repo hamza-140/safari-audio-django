@@ -129,6 +129,31 @@
         color: #2d3748;
         font-size: 0.92rem;
     }
+    .section-label {
+        font-size: 0.75rem;
+        color: #718096;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin: 18px 2px 8px;
+        font-weight: 700;
+    }
+    .log-wrap {
+        background: #1c1c1e;
+        border-radius: 12px;
+        padding: 12px 14px;
+        max-height: 220px;
+        overflow-y: auto;
+    }
+    .log-line {
+        font-family: Menlo, Monaco, Consolas, 'Courier New', monospace;
+        font-size: 11.5px;
+        line-height: 1.55;
+        color: #8e8e93;
+    }
+    .log-line.ok { color: #32d74b; }
+    .log-line.err { color: #ff453a; }
+    .log-line.warn { color: #ffd60a; }
+    .log-line.info { color: #64d2ff; }
 
     @media (max-width: 680px) {
         .status-grid { grid-template-columns: 1fr; }
@@ -163,6 +188,10 @@
             <div class="status-label">Last Error</div>
             <div class="status-value" id="stError">none</div>
         </div>
+        <div class="status-card">
+            <div class="status-label">Playback Source</div>
+            <div class="status-value" id="stSource">unknown</div>
+        </div>
     </div>
 
     <div class="quiz-card">
@@ -175,6 +204,9 @@
             <button class="btn" type="button" id="nextBtn" disabled>Next</button>
         </div>
     </div>
+
+    <div class="section-label">Console log</div>
+    <div class="log-wrap" id="log"></div>
 </div>
 {% endblock %}
 
@@ -209,6 +241,16 @@
     var resultEl = document.getElementById('result');
     var scoreEl = document.getElementById('score');
     var nextBtn = document.getElementById('nextBtn');
+    var logEl = document.getElementById('log');
+
+    function pushLog(msg, type) {
+        var line = document.createElement('div');
+        line.className = 'log-line ' + (type || '');
+        var t = new Date().toLocaleTimeString('en', { hour12: false });
+        line.textContent = '[' + t + '] ' + msg;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
 
     function stateText(flag) {
         return flag ? 'yes' : 'no';
@@ -221,6 +263,7 @@
         document.getElementById('stContext').textContent = hasManager ? st.contextState : 'unavailable';
         document.getElementById('stUnlocked').textContent = hasManager ? stateText(st.unlocked) : 'no';
         document.getElementById('stError').textContent = hasManager ? st.lastError : 'SoundManager not loaded';
+        document.getElementById('stSource').textContent = hasManager ? st.lastPlaybackSource : 'none';
     }
 
     function renderQuestion() {
@@ -268,11 +311,23 @@
             score += 1;
             resultEl.textContent = 'Correct';
             resultEl.className = 'result ok';
-            if (window.SoundManager) window.SoundManager.playCorrect();
+            pushLog('Answer selected: correct', 'ok');
+            if (window.SoundManager) {
+                window.SoundManager.playCorrect().then(function (ok) {
+                    pushLog(ok ? 'Correct sound played' : 'Correct sound failed', ok ? 'ok' : 'err');
+                    paintStatus();
+                });
+            }
         } else {
             resultEl.textContent = 'Wrong. Correct answer: ' + q.options[q.correct];
             resultEl.className = 'result err';
-            if (window.SoundManager) window.SoundManager.playWrong();
+            pushLog('Answer selected: wrong', 'warn');
+            if (window.SoundManager) {
+                window.SoundManager.playWrong().then(function (ok) {
+                    pushLog(ok ? 'Wrong sound played' : 'Wrong sound failed', ok ? 'ok' : 'err');
+                    paintStatus();
+                });
+            }
         }
 
         scoreEl.textContent = 'Score: ' + score;
@@ -297,6 +352,28 @@
 
     renderQuestion();
     paintStatus();
+    pushLog('Quiz page ready', 'info');
+    if (window.SoundManager) {
+        var st = window.SoundManager.getState();
+        (st.logs || []).forEach(function (entry) {
+            var line = document.createElement('div');
+            line.className = 'log-line ' + (entry.level || '');
+            line.textContent = '[' + entry.time + '] ' + entry.message;
+            logEl.appendChild(line);
+        });
+        if (st.logs && st.logs.length) {
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    }
+    window.addEventListener('soundmanager:log', function (event) {
+        if (!event || !event.detail) return;
+        var d = event.detail;
+        var line = document.createElement('div');
+        line.className = 'log-line ' + (d.level || '');
+        line.textContent = '[' + d.time + '] ' + d.message;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+    });
     setInterval(paintStatus, 1000);
 })();
 </script>
