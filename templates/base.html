@@ -16,16 +16,89 @@
             wrong: 'https://d3iyagsnytq9oz.cloudfront.net/static/sfx/INCORRECT%20ANSWER.mp3',
             success: 'https://d3iyagsnytq9oz.cloudfront.net/static/sfx/COURSE%20COMPLETE.mp3'
         };
+        var connectionSource = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
+
+        function nowText() {
+            return new Date().toISOString();
+        }
+
+        function safeText(value, fallback) {
+            return value === undefined || value === null || value === '' ? (fallback || 'unknown') : String(value);
+        }
+
+        function detectBrowser(ua) {
+            if (/CriOS/i.test(ua)) return 'Chrome iOS';
+            if (/FxiOS/i.test(ua)) return 'Firefox iOS';
+            if (/EdgiOS/i.test(ua)) return 'Edge iOS';
+            if (/OPiOS/i.test(ua)) return 'Opera iOS';
+            if (/SamsungBrowser/i.test(ua)) return 'Samsung Internet';
+            if (/Firefox/i.test(ua)) return 'Firefox';
+            if (/Edg/i.test(ua)) return 'Edge';
+            if (/Chrome/i.test(ua) && !/Chromium/i.test(ua)) return 'Chrome';
+            if (/Safari/i.test(ua) && /Apple/.test(navigator.vendor || '') && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome/i.test(ua)) return 'Safari';
+            if (/MSIE|Trident/i.test(ua)) return 'Internet Explorer';
+            return 'Unknown';
+        }
+
+        function detectDeviceInfo() {
+            var ua = navigator.userAgent || '';
+            var platform = navigator.platform || '';
+            var maxTouchPoints = navigator.maxTouchPoints || 0;
+            var isIPhone = /iPhone/i.test(ua);
+            var isIPad = /iPad/i.test(ua) || (platform === 'MacIntel' && maxTouchPoints > 1);
+            var isIOS = isIPhone || isIPad || /iPod/i.test(ua);
+            var isAndroid = /Android/i.test(ua);
+            var isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(ua) || maxTouchPoints > 1;
+            var browser = detectBrowser(ua);
+            var os = 'Desktop';
+
+            if (isIOS) {
+                os = isIPad ? 'iPadOS' : 'iOS';
+            } else if (isAndroid) {
+                os = 'Android';
+            } else if (/Windows/i.test(ua) || /Win/i.test(platform)) {
+                os = 'Windows';
+            } else if (/Mac/i.test(platform)) {
+                os = 'macOS';
+            } else if (/Linux/i.test(platform)) {
+                os = 'Linux';
+            }
+
+            return {
+                userAgent: ua,
+                platform: platform,
+                vendor: navigator.vendor || '',
+                browser: browser,
+                os: os,
+                device: isIPad ? 'iPad' : (isIPhone ? 'iPhone' : (isAndroid ? 'Android' : 'Desktop')),
+                isIOS: isIOS,
+                isSafari: browser === 'Safari',
+                isMobile: isMobile,
+                touchPoints: maxTouchPoints,
+                standalone: !!navigator.standalone,
+                summary: [isIPad ? 'iPad' : (isIPhone ? 'iPhone' : (isAndroid ? 'Android' : 'Desktop')), browser, os].join(' | ')
+            };
+        }
+
+        function detectConnectionInfo() {
+            return {
+                online: navigator.onLine,
+                visibility: document.visibilityState || 'unknown',
+                effectiveType: connectionSource && connectionSource.effectiveType ? connectionSource.effectiveType : 'n/a',
+                downlink: connectionSource && connectionSource.downlink ? String(connectionSource.downlink) + ' Mbps' : 'n/a',
+                saveData: connectionSource && connectionSource.saveData ? 'yes' : 'no'
+            };
+        }
+
         var state = {
             supported: !!AudioCtor,
             initialized: false,
             unlocked: false,
             contextState: AudioCtor ? 'not-created' : 'unavailable',
+            mediaState: 'idle',
             lastError: 'none',
-            source: 'url+fallback',
+            source: 'web-audio-buffer+html-audio+fallback',
             lastPlaybackSource: 'none',
-<<<<<<< Updated upstream
-=======
             lastRequestedKind: 'none',
             lastRequestedAt: 'none',
             lastStartedAt: 'none',
@@ -38,14 +111,11 @@
             },
             device: detectDeviceInfo(),
             connection: detectConnectionInfo(),
->>>>>>> Stashed changes
             logs: []
         };
 
         var ctx = null;
         var unlockBound = false;
-<<<<<<< Updated upstream
-=======
         var bufferCache = {
             correct: null,
             wrong: null,
@@ -56,14 +126,11 @@
             wrong: null,
             success: null
         };
->>>>>>> Stashed changes
         var players = {
             correct: null,
             wrong: null,
             success: null
         };
-<<<<<<< Updated upstream
-=======
         var playerBindings = {
             correct: false,
             wrong: false,
@@ -79,7 +146,6 @@
             state.device = detectDeviceInfo();
             state.connection = detectConnectionInfo();
         }
->>>>>>> Stashed changes
 
         function pushLog(message, level) {
             var entry = {
@@ -94,6 +160,15 @@
             window.dispatchEvent(new CustomEvent('soundmanager:log', { detail: entry }));
         }
 
+        function setMediaState(value) {
+            state.mediaState = value;
+        }
+
+        function updateError(message, level) {
+            state.lastError = message || 'unknown error';
+            pushLog(message || 'unknown error', level || 'err');
+        }
+
         function ensureContext() {
             if (!state.supported) return null;
             if (ctx) return ctx;
@@ -104,11 +179,13 @@
                 ctx.addEventListener('statechange', function () {
                     state.contextState = ctx.state;
                     pushLog('Context state changed to ' + ctx.state, ctx.state === 'running' ? 'ok' : 'warn');
+                    if (ctx.state === 'suspended' || ctx.state === 'interrupted') {
+                        setMediaState(ctx.state);
+                    }
                 });
                 return ctx;
             } catch (err) {
-                state.lastError = err && err.message ? err.message : 'AudioContext creation failed';
-                pushLog('AudioContext failed: ' + state.lastError, 'err');
+                updateError(err && err.message ? err.message : 'AudioContext creation failed', 'err');
                 return null;
             }
         }
@@ -134,20 +211,56 @@
                 el.playsInline = true;
                 el.setAttribute('playsinline', '');
                 el.setAttribute('webkit-playsinline', '');
+                el.crossOrigin = 'anonymous';
                 el.load();
                 return el;
             } catch (err) {
-                state.lastError = err && err.message ? err.message : 'Audio element creation failed';
-                pushLog('Audio player creation failed: ' + state.lastError, 'err');
+                updateError(err && err.message ? err.message : 'Audio element creation failed', 'err');
                 return null;
             }
         }
 
+        function bindPlayerEvents(kind, player) {
+            if (!player || playerBindings[kind]) return;
+            playerBindings[kind] = true;
+
+            player.addEventListener('playing', function () {
+                state.lastPlaybackSource = 'html-audio';
+                setMediaState('playing');
+                state.lastStartedAt = nowText();
+                pushLog(kind + ' HTML audio playing', 'ok');
+            });
+
+            player.addEventListener('pause', function () {
+                if (state.mediaState === 'playing') {
+                    setMediaState('paused');
+                }
+            });
+
+            player.addEventListener('ended', function () {
+                setMediaState('ended');
+                state.lastEndedAt = nowText();
+                pushLog(kind + ' HTML audio ended', 'info');
+            });
+
+            player.addEventListener('waiting', function () {
+                setMediaState('waiting');
+                pushLog(kind + ' HTML audio waiting', 'warn');
+            });
+
+            player.addEventListener('stalled', function () {
+                setMediaState('stalled');
+                pushLog(kind + ' HTML audio stalled', 'warn');
+            });
+
+            player.addEventListener('error', function () {
+                var err = player.error ? ('media error ' + player.error.code) : 'media error';
+                updateError(kind + ' HTML audio failed: ' + err, 'err');
+                setMediaState('error');
+            });
+        }
+
         function ensurePlayers() {
-<<<<<<< Updated upstream
-            if (!players.correct) players.correct = buildPlayer(SOUND_URLS.correct);
-            if (!players.wrong) players.wrong = buildPlayer(SOUND_URLS.wrong);
-=======
             if (!players.correct) {
                 players.correct = buildPlayer(SOUND_URLS.correct);
                 bindPlayerEvents('correct', players.correct);
@@ -160,52 +273,173 @@
                 players.success = buildPlayer(SOUND_URLS.success);
                 bindPlayerEvents('success', players.success);
             }
->>>>>>> Stashed changes
         }
 
-        function createPlaybackInstance(kind) {
-            var base = players[kind];
-            if (!base) return null;
-            var p = base.cloneNode();
-            p.preload = 'auto';
-            p.playsInline = true;
-            p.setAttribute('playsinline', '');
-            p.setAttribute('webkit-playsinline', '');
-            p.currentTime = 0;
-            return p;
+        function beginPlayback(kind) {
+            state.lastRequestedKind = kind;
+            state.lastRequestedAt = nowText();
+            state.lastPlaybackSource = 'pending';
+            state.lastStartedAt = 'none';
+            state.lastEndedAt = 'none';
+            state.playCount += 1;
+            setMediaState('requested');
+            pushLog('Playback requested: ' + kind, 'info');
         }
 
-        function tryPlayUrl(kind) {
+        function resetPlayer(player) {
+            if (!player) return;
+            try { player.pause(); } catch (err) {}
+            try { player.currentTime = 0; } catch (err2) {}
+        }
+
+        function stopActiveSource(kind) {
+            var source = activeSources[kind];
+            if (!source) return;
+            try { source.stop(0); } catch (err) {}
+            activeSources[kind] = null;
+        }
+
+        function decodeAudioBuffer(kind) {
+            var url = SOUND_URLS[kind];
+            if (!state.supported) return Promise.resolve(null);
+            if (bufferCache[kind]) return Promise.resolve(bufferCache[kind]);
+            if (bufferPromises[kind]) return bufferPromises[kind];
+
+            var localCtx = ensureContext();
+            if (!localCtx || typeof fetch !== 'function') return Promise.resolve(null);
+
+            state.bufferStatus[kind] = 'loading';
+            pushLog('Fetching ' + kind + ' audio buffer', 'info');
+
+            bufferPromises[kind] = fetch(url, { mode: 'cors', cache: 'force-cache' }).then(function (response) {
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.arrayBuffer();
+            }).then(function (arrayBuffer) {
+                return new Promise(function (resolve, reject) {
+                    try {
+                        var decodeResult = localCtx.decodeAudioData(
+                            arrayBuffer,
+                            function (buffer) { resolve(buffer); },
+                            function (err) { reject(err); }
+                        );
+                        if (decodeResult && typeof decodeResult.then === 'function') {
+                            decodeResult.then(resolve).catch(reject);
+                        }
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            }).then(function (buffer) {
+                bufferCache[kind] = buffer;
+                state.bufferStatus[kind] = 'ready';
+                pushLog('Decoded ' + kind + ' audio buffer', 'ok');
+                return buffer;
+            }).catch(function (err) {
+                state.bufferStatus[kind] = 'failed';
+                updateError('Buffer load failed for ' + kind + ': ' + safeText(err && err.message, 'decode failed'), 'warn');
+                return null;
+            }).then(function (buffer) {
+                bufferPromises[kind] = null;
+                return buffer;
+            });
+
+            return bufferPromises[kind];
+        }
+
+        function playViaWebAudio(kind) {
+            var localCtx = ensureContext();
+            if (!localCtx) return Promise.resolve(false);
+
+            setMediaState('loading-buffer');
+
+            return resumeContext().then(function (ok) {
+                if (!ok || !ctx) return false;
+                return decodeAudioBuffer(kind).then(function (buffer) {
+                    if (!buffer) return false;
+
+                    stopActiveSource(kind);
+
+                    var source = ctx.createBufferSource();
+                    var gain = ctx.createGain();
+                    source.buffer = buffer;
+                    gain.gain.value = 1;
+                    source.connect(gain);
+                    gain.connect(ctx.destination);
+
+                    state.lastPlaybackSource = 'web-audio-buffer';
+                    state.lastStartedAt = nowText();
+                    setMediaState('starting');
+                    pushLog('Starting ' + kind + ' via Web Audio buffer', 'ok');
+
+                    return new Promise(function (resolve) {
+                        source.onended = function () {
+                            if (activeSources[kind] === source) {
+                                activeSources[kind] = null;
+                            }
+                            state.lastEndedAt = nowText();
+                            setMediaState('ended');
+                            pushLog(kind + ' buffer ended', 'ok');
+                            resolve(true);
+                        };
+
+                        try {
+                            activeSources[kind] = source;
+                            source.start(0);
+                            setMediaState('playing');
+                            resolve(true);
+                        } catch (err) {
+                            if (activeSources[kind] === source) {
+                                activeSources[kind] = null;
+                            }
+                            updateError('Buffer start failed for ' + kind + ': ' + safeText(err && err.message, 'start failed'), 'err');
+                            setMediaState('error');
+                            resolve(false);
+                        }
+                    });
+                });
+            });
+        }
+
+        function tryPlayHtmlAudio(kind) {
             ensurePlayers();
-            var p = createPlaybackInstance(kind);
+            var p = players[kind];
             if (!p) return Promise.resolve(false);
 
+            state.lastPlaybackSource = 'html-audio';
+            setMediaState('loading-media');
+
             try {
-                p.pause();
-                p.currentTime = 0;
+                resetPlayer(p);
             } catch (err) {
-                state.lastError = err && err.message ? err.message : 'Audio reset failed';
+                updateError(err && err.message ? err.message : 'Audio reset failed', 'warn');
             }
 
             var playPromise;
             try {
                 playPromise = p.play();
             } catch (err) {
-                state.lastError = err && err.message ? err.message : 'Audio play threw synchronously';
+                updateError(err && err.message ? err.message : 'Audio play threw synchronously', 'err');
+                setMediaState('error');
                 return Promise.resolve(false);
             }
 
             if (!playPromise || typeof playPromise.then !== 'function') {
+                state.lastStartedAt = nowText();
+                setMediaState('playing');
+                pushLog('Played ' + kind + ' from HTML audio', 'ok');
                 return Promise.resolve(true);
             }
 
             return playPromise.then(function () {
-                state.lastPlaybackSource = 'url';
-                pushLog('Played ' + kind + ' from URL', 'ok');
+                state.lastStartedAt = nowText();
+                setMediaState('playing');
+                pushLog('Played ' + kind + ' from HTML audio', 'ok');
                 return true;
             }).catch(function (err) {
-                state.lastError = err && err.message ? err.message : 'URL audio play failed';
-                pushLog('URL playback failed for ' + kind + ': ' + state.lastError, 'warn');
+                updateError('HTML audio playback failed for ' + kind + ': ' + safeText(err && err.message, 'play failed'), 'warn');
+                setMediaState('error');
                 return false;
             });
         }
@@ -218,6 +452,9 @@
                 playEnvelope(659.25, 'sine', t + 0.10, 0.14, 0.20);
                 playEnvelope(783.99, 'triangle', t + 0.20, 0.18, 0.18);
                 state.lastPlaybackSource = 'fallback';
+                state.lastStartedAt = nowText();
+                state.lastEndedAt = nowText();
+                setMediaState('fallback-playing');
                 pushLog('Played correct via fallback synth', 'warn');
                 return true;
             });
@@ -230,6 +467,9 @@
                 playEnvelope(320, 'sawtooth', t, 0.16, 0.16);
                 playEnvelope(220, 'sawtooth', t + 0.11, 0.22, 0.17);
                 state.lastPlaybackSource = 'fallback';
+                state.lastStartedAt = nowText();
+                state.lastEndedAt = nowText();
+                setMediaState('fallback-playing');
                 pushLog('Played wrong via fallback synth', 'warn');
                 return true;
             });
@@ -266,8 +506,7 @@
                 pushLog('Context resumed to ' + localCtx.state, state.unlocked ? 'ok' : 'warn');
                 return state.unlocked;
             }).catch(function (err) {
-                state.lastError = err && err.message ? err.message : 'resume failed';
-                pushLog('Context resume failed: ' + state.lastError, 'err');
+                updateError(err && err.message ? err.message : 'resume failed', 'err');
                 return false;
             });
         }
@@ -282,16 +521,31 @@
             });
 
             document.addEventListener('visibilitychange', function () {
+                refreshRuntimeState();
                 if (!document.hidden) resumeContext();
             });
 
-            window.addEventListener('pageshow', function () { resumeContext(); });
+            window.addEventListener('pageshow', function () {
+                refreshRuntimeState();
+                resumeContext();
+            });
+
+            window.addEventListener('online', function () {
+                refreshRuntimeState();
+                pushLog('Network online', 'ok');
+            });
+
+            window.addEventListener('offline', function () {
+                refreshRuntimeState();
+                pushLog('Network offline', 'warn');
+            });
         }
 
         var SoundManager = {
             init: function () {
                 if (state.initialized) return;
                 state.initialized = true;
+                refreshRuntimeState();
                 ensurePlayers();
                 bindUnlockListeners();
                 pushLog('SoundManager initialized', 'info');
@@ -300,16 +554,24 @@
                 return resumeContext();
             },
             playCorrect: function () {
+                beginPlayback('correct');
                 return resumeContext().then(function () {
-                    return tryPlayUrl('correct');
+                    return playViaWebAudio('correct');
+                }).then(function (ok) {
+                    if (ok) return true;
+                    return tryPlayHtmlAudio('correct');
                 }).then(function (ok) {
                     if (ok) return true;
                     return playCorrectFallback();
                 });
             },
             playWrong: function () {
+                beginPlayback('wrong');
                 return resumeContext().then(function () {
-                    return tryPlayUrl('wrong');
+                    return playViaWebAudio('wrong');
+                }).then(function (ok) {
+                    if (ok) return true;
+                    return tryPlayHtmlAudio('wrong');
                 }).then(function (ok) {
                     if (ok) return true;
                     return playWrongFallback();
@@ -328,14 +590,24 @@
                 });
             },
             getState: function () {
+                refreshRuntimeState();
                 return {
                     supported: state.supported,
                     initialized: state.initialized,
                     unlocked: state.unlocked,
                     contextState: state.contextState,
+                    mediaState: state.mediaState,
                     lastError: state.lastError,
                     source: state.source,
                     lastPlaybackSource: state.lastPlaybackSource,
+                    lastRequestedKind: state.lastRequestedKind,
+                    lastRequestedAt: state.lastRequestedAt,
+                    lastStartedAt: state.lastStartedAt,
+                    lastEndedAt: state.lastEndedAt,
+                    playCount: state.playCount,
+                    bufferStatus: state.bufferStatus,
+                    device: state.device,
+                    connection: state.connection,
                     logs: state.logs.slice()
                 };
             }
