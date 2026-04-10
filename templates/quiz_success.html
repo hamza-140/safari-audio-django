@@ -391,6 +391,7 @@
     <div class="panel" id="loadingPanel">
         <div class="loading">
             <div class="loading-shell">
+                <audio id="successAudio" preload="auto" autoplay playsinline webkit-playsinline crossorigin="anonymous" src="https://d3iyagsnytq9oz.cloudfront.net/static/sfx/COURSE%20COMPLETE.mp3"></audio>
                 <div class="eyebrow">Completion in progress</div>
                 <div class="loader-ring" aria-hidden="true">
                     <div class="loader-core"></div>
@@ -474,6 +475,7 @@
     var statTime = document.getElementById('statTime');
     var replaySound = document.getElementById('replaySound');
     var footerNote = document.getElementById('footerNote');
+    var successAudio = document.getElementById('successAudio');
 
     var summary = {
         attempt: 1,
@@ -509,6 +511,43 @@
         loadingStatus.textContent = message;
     }
 
+    function playAudioElement(audio) {
+        if (!audio) return Promise.resolve(false);
+
+        try {
+            audio.currentTime = 0;
+        } catch (err) {}
+
+        var playResult;
+        try {
+            playResult = audio.play();
+        } catch (err2) {
+            return Promise.resolve(false);
+        }
+
+        if (!playResult || typeof playResult.then !== 'function') {
+            setLoadingMessage('Completion sound started. Finishing the reveal...');
+            return Promise.resolve(true);
+        }
+
+        return playResult.then(function () {
+            setLoadingMessage('Completion sound started. Finishing the reveal...');
+            return new Promise(function (resolve) {
+                var settled = false;
+                function finish(value) {
+                    if (settled) return;
+                    settled = true;
+                    resolve(value);
+                }
+
+                audio.addEventListener('ended', function () { finish(true); }, { once: true });
+                window.setTimeout(function () { finish(true); }, 4200);
+            });
+        }).catch(function () {
+            return false;
+        });
+    }
+
     function revealSuccess() {
         loadingPanel.classList.add('hidden');
         successPanel.classList.remove('hidden');
@@ -525,56 +564,39 @@
     }
 
     function playCompletionSound() {
-        if (window.SoundManager && typeof window.SoundManager.playSuccess === 'function') {
-            return window.SoundManager.playSuccess().then(function (ok) {
-                if (!ok) {
-                    setLoadingMessage('Sound fallback was used, keeping the celebration visible.');
-                } else {
-                    setLoadingMessage('Completion sound started. Finishing the reveal...');
-                }
-                return ok;
-            }).catch(function (err) {
-                setLoadingMessage('Sound playback was blocked, showing the success screen anyway.');
-                footerNote.textContent = err && err.message ? err.message : footerNote.textContent;
-                return false;
-            });
-        }
-
-        var audio = new Audio('https://d3iyagsnytq9oz.cloudfront.net/static/sfx/COURSE%20COMPLETE.mp3');
-        audio.crossOrigin = 'anonymous';
-        audio.preload = 'auto';
-        audio.playsInline = true;
-        audio.setAttribute('playsinline', '');
-        audio.setAttribute('webkit-playsinline', '');
-
-        return new Promise(function (resolve) {
-            var settled = false;
-            function finish(value) {
-                if (settled) return;
-                settled = true;
-                resolve(value);
+        return playAudioElement(successAudio).then(function (ok) {
+            if (ok) {
+                return true;
             }
-            audio.addEventListener('ended', function () { finish(true); });
-            audio.addEventListener('error', function () { finish(false); });
-            var playResult = audio.play();
-            if (playResult && typeof playResult.then === 'function') {
-                playResult.then(function () {
-                    setLoadingMessage('Completion sound started. Finishing the reveal...');
-                    window.setTimeout(function () { finish(true); }, 2200);
-                }).catch(function () {
-                    setLoadingMessage('Audio could not auto-play, showing the success screen anyway.');
-                    finish(false);
+
+            if (window.SoundManager && typeof window.SoundManager.playSuccess === 'function') {
+                return window.SoundManager.playSuccess().then(function (managerOk) {
+                    if (!managerOk) {
+                        setLoadingMessage('Sound fallback was used, keeping the celebration visible.');
+                    } else {
+                        setLoadingMessage('Completion sound started. Finishing the reveal...');
+                    }
+                    return managerOk;
+                }).catch(function (err) {
+                    setLoadingMessage('Sound playback was blocked, showing the success screen anyway.');
+                    footerNote.textContent = err && err.message ? err.message : footerNote.textContent;
+                    return false;
                 });
-            } else {
-                window.setTimeout(function () { finish(true); }, 2200);
             }
-            window.setTimeout(function () { finish(true); }, 4200);
+
+            setLoadingMessage('Audio could not auto-play, showing the success screen anyway.');
+            return false;
         });
     }
 
     function bindReplay() {
         replaySound.addEventListener('click', function (event) {
             event.preventDefault();
+            if (successAudio) {
+                playAudioElement(successAudio);
+                setLoadingMessage('Replaying the completion sound.');
+                return;
+            }
             if (window.SoundManager && typeof window.SoundManager.playSuccess === 'function') {
                 window.SoundManager.playSuccess();
                 setLoadingMessage('Replaying the completion sound.');

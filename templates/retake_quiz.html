@@ -830,9 +830,7 @@
             setBanner('Perfect run locked. Opening the success screen now.', 'success');
             nextBtn.disabled = true;
             pushLog('Perfect attempt achieved, navigating to success screen', 'ok');
-            redirectTimer = window.setTimeout(function () {
-                window.location.href = '/retake-quiz/success/';
-            }, 1100);
+            window.location.replace('/retake-quiz/success/');
             return;
         }
 
