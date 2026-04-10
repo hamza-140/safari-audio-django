@@ -532,6 +532,18 @@
         }
     }
 
+    function completionAudioAlreadyPlayed() {
+        try {
+            var played = sessionStorage.getItem('retakeQuizSuccessAudioPlayed') === 'yes';
+            if (played) {
+                sessionStorage.removeItem('retakeQuizSuccessAudioPlayed');
+            }
+            return played;
+        } catch (err) {
+            return false;
+        }
+    }
+
     function formatTimestamp(value) {
         if (!value) return 'Just now';
         try {
@@ -721,6 +733,14 @@
             logEl.scrollTop = logEl.scrollHeight;
         });
         setLoadingMessage('Starting completion audio...');
+        if (completionAudioAlreadyPlayed()) {
+            pushLog('Completion audio already played before navigation', 'ok');
+            window.setTimeout(function () {
+                revealSuccess();
+            }, 250);
+            return;
+        }
+
         Promise.all([
             playCompletionSound(),
             wait(2600)
