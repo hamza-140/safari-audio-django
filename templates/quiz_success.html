@@ -361,6 +361,36 @@
         text-decoration: underline;
     }
 
+    .section-label {
+        margin: 20px 4px 10px;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: rgba(226, 232, 240, 0.62);
+        font-weight: 700;
+    }
+
+    .log-wrap {
+        background: rgba(6, 10, 19, 0.85);
+        border-radius: 18px;
+        padding: 14px 15px;
+        max-height: 220px;
+        overflow-y: auto;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .log-line {
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 11.5px;
+        line-height: 1.6;
+        color: #94a3b8;
+    }
+
+    .log-line.ok { color: #4ade80; }
+    .log-line.err { color: #fb7185; }
+    .log-line.warn { color: #fde047; }
+    .log-line.info { color: #67e8f9; }
+
     @media (max-width: 780px) {
         .loading,
         .success {
@@ -460,6 +490,9 @@
             <div class="footer-note" id="footerNote">If audio is blocked by the browser, use replay sound or start the retake flow again from the button above.</div>
         </div>
     </div>
+
+    <div class="section-label">Console log</div>
+    <div class="log-wrap" id="log"></div>
 </div>
 {% endblock %}
 
@@ -476,6 +509,7 @@
     var replaySound = document.getElementById('replaySound');
     var footerNote = document.getElementById('footerNote');
     var successAudio = document.getElementById('successAudio');
+    var logEl = document.getElementById('log');
 
     var summary = {
         attempt: 1,
@@ -511,8 +545,41 @@
         loadingStatus.textContent = message;
     }
 
+    function pushLog(message, level) {
+        if (!logEl) return;
+        var line = document.createElement('div');
+        line.className = 'log-line ' + (level || '');
+        var timestamp = new Date().toLocaleTimeString('en', { hour12: false });
+        line.textContent = '[' + timestamp + '] ' + message;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function syncLogs() {
+        if (!window.SoundManager || typeof window.SoundManager.getState !== 'function' || !logEl) return;
+        var state = window.SoundManager.getState();
+        (state.logs || []).forEach(function (entry) {
+            var line = document.createElement('div');
+            line.className = 'log-line ' + (entry.level || '');
+            line.textContent = '[' + entry.time + '] ' + entry.message;
+            logEl.appendChild(line);
+        });
+        if (state.logs && state.logs.length) {
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    }
+
     function playAudioElement(audio) {
         if (!audio) return Promise.resolve(false);
+
+        if (!audio.getAttribute('preload')) {
+            audio.setAttribute('preload', 'auto');
+        }
+        audio.playsInline = true;
+        audio.setAttribute('playsinline', '');
+        audio.setAttribute('webkit-playsinline', '');
+        audio.crossOrigin = 'anonymous';
+        audio.load();
 
         try {
             audio.currentTime = 0;
@@ -527,11 +594,13 @@
 
         if (!playResult || typeof playResult.then !== 'function') {
             setLoadingMessage('Completion sound started. Finishing the reveal...');
+            pushLog('Completion audio started without a promise response', 'ok');
             return Promise.resolve(true);
         }
 
         return playResult.then(function () {
             setLoadingMessage('Completion sound started. Finishing the reveal...');
+            pushLog('Completion audio started', 'ok');
             return new Promise(function (resolve) {
                 var settled = false;
                 function finish(value) {
@@ -569,6 +638,32 @@
                 return true;
             }
 
+            pushLog('Primary autoplay attempt was blocked', 'warn');
+
+            if (successAudio) {
+                successAudio.muted = true;
+                successAudio.volume = 1;
+                try {
+                    successAudio.currentTime = 0;
+                } catch (err) {}
+
+                return successAudio.play().then(function () {
+                    pushLog('Muted autoplay fallback started', 'ok');
+                    window.setTimeout(function () {
+                        try {
+                            successAudio.muted = false;
+                            pushLog('Muted autoplay fallback unmuted', 'ok');
+                        } catch (err2) {
+                            pushLog('Muted autoplay fallback could not unmute', 'warn');
+                        }
+                    }, 0);
+                    setLoadingMessage('Completion sound started. Finishing the reveal...');
+                    return true;
+                }).catch(function () {
+                    return false;
+                });
+            }
+
             if (window.SoundManager && typeof window.SoundManager.playSuccess === 'function') {
                 return window.SoundManager.playSuccess().then(function (managerOk) {
                     if (!managerOk) {
@@ -595,11 +690,13 @@
             if (successAudio) {
                 playAudioElement(successAudio);
                 setLoadingMessage('Replaying the completion sound.');
+                pushLog('Replay requested from success page', 'info');
                 return;
             }
             if (window.SoundManager && typeof window.SoundManager.playSuccess === 'function') {
                 window.SoundManager.playSuccess();
                 setLoadingMessage('Replaying the completion sound.');
+                pushLog('Replay requested through SoundManager', 'info');
                 return;
             }
             var audio = new Audio('https://d3iyagsnytq9oz.cloudfront.net/static/sfx/COURSE%20COMPLETE.mp3');
@@ -613,6 +710,16 @@
     function start() {
         loadSummary();
         bindReplay();
+        syncLogs();
+        window.addEventListener('soundmanager:log', function (event) {
+            if (!event || !event.detail || !logEl) return;
+            var d = event.detail;
+            var line = document.createElement('div');
+            line.className = 'log-line ' + (d.level || '');
+            line.textContent = '[' + d.time + '] ' + d.message;
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+        });
         setLoadingMessage('Starting completion audio...');
         Promise.all([
             playCompletionSound(),
@@ -622,11 +729,7 @@
         });
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', start);
-    } else {
-        start();
-    }
+    start();
 })();
 </script>
 {% endblock %}
