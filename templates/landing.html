@@ -96,6 +96,48 @@
     .log-line.err  { color: #ff453a; }
     .log-line.warn { color: #ffd60a; }
     .log-line.info { color: #64d2ff; }
+
+    .flow-card {
+        background: linear-gradient(135deg, rgba(17, 24, 39, 0.96), rgba(12, 74, 110, 0.86));
+        border-radius: 18px;
+        padding: 16px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+    .flow-title {
+        font-size: 15px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: #fff;
+    }
+    .flow-copy {
+        font-size: 13px;
+        line-height: 1.55;
+        color: rgba(226, 232, 240, 0.82);
+        margin-bottom: 12px;
+    }
+    .flow-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .flow-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 14px;
+        border-radius: 999px;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0f172a;
+        background: linear-gradient(135deg, #f6c453, #86efac);
+    }
+    .flow-link.secondary {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.12);
+    }
 </style>
 {% endblock %}
 
@@ -161,6 +203,15 @@
         <div class="prog-wrap" id="pw3"><div class="prog-track"><div class="prog-fill" id="pf3"></div></div><div class="prog-time" id="pt3"></div></div>
     </div>
     <button class="play-btn" id="btn3" onclick="playSound(3)">&#9654;</button>
+</div>
+
+<div class="flow-card">
+    <div class="flow-title">Quiz flows</div>
+    <div class="flow-copy">Open the standard quiz for a quick pass, or jump into the retake flow that keeps restarting until every answer is correct and the completion screen can play the final sound.</div>
+    <div class="flow-links">
+        <a class="flow-link" href="/quiz/">Open quiz</a>
+        <a class="flow-link secondary" href="/retake-quiz/">Open retake flow</a>
+    </div>
 </div>
 
 <div class="section-label">Console log</div>

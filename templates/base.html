@@ -13,7 +13,8 @@
         var AudioCtor = window.AudioContext || window.webkitAudioContext;
         var SOUND_URLS = {
             correct: 'https://d3iyagsnytq9oz.cloudfront.net/static/sfx/CORRECT%20ANSWER.mp3',
-            wrong: 'https://d3iyagsnytq9oz.cloudfront.net/static/sfx/INCORRECT%20ANSWER.mp3'
+            wrong: 'https://d3iyagsnytq9oz.cloudfront.net/static/sfx/INCORRECT%20ANSWER.mp3',
+            success: 'https://d3iyagsnytq9oz.cloudfront.net/static/sfx/COURSE%20COMPLETE.mp3'
         };
         var connectionSource = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
 
@@ -105,7 +106,8 @@
             playCount: 0,
             bufferStatus: {
                 correct: 'idle',
-                wrong: 'idle'
+                wrong: 'idle',
+                success: 'idle'
             },
             device: detectDeviceInfo(),
             connection: detectConnectionInfo(),
@@ -116,23 +118,28 @@
         var unlockBound = false;
         var bufferCache = {
             correct: null,
-            wrong: null
+            wrong: null,
+            success: null
         };
         var bufferPromises = {
             correct: null,
-            wrong: null
+            wrong: null,
+            success: null
         };
         var players = {
             correct: null,
-            wrong: null
+            wrong: null,
+            success: null
         };
         var playerBindings = {
             correct: false,
-            wrong: false
+            wrong: false,
+            success: false
         };
         var activeSources = {
             correct: null,
-            wrong: null
+            wrong: null,
+            success: null
         };
 
         function refreshRuntimeState() {
@@ -261,6 +268,10 @@
             if (!players.wrong) {
                 players.wrong = buildPlayer(SOUND_URLS.wrong);
                 bindPlayerEvents('wrong', players.wrong);
+            }
+            if (!players.success) {
+                players.success = buildPlayer(SOUND_URLS.success);
+                bindPlayerEvents('success', players.success);
             }
         }
 
@@ -464,6 +475,22 @@
             });
         }
 
+        function playSuccessFallback() {
+            return resumeContext().then(function (ok) {
+                if (!ok || !ctx) return false;
+                var t = ctx.currentTime;
+                playEnvelope(523.25, 'triangle', t, 0.14, 0.20);
+                playEnvelope(659.25, 'triangle', t + 0.12, 0.16, 0.18);
+                playEnvelope(783.99, 'sine', t + 0.24, 0.22, 0.16);
+                state.lastPlaybackSource = 'fallback';
+                state.lastStartedAt = nowText();
+                state.lastEndedAt = nowText();
+                setMediaState('fallback-playing');
+                pushLog('Played success via fallback synth', 'warn');
+                return true;
+            });
+        }
+
         function resumeContext() {
             var localCtx = ensureContext();
             if (!localCtx) return Promise.resolve(false);
@@ -548,6 +575,18 @@
                 }).then(function (ok) {
                     if (ok) return true;
                     return playWrongFallback();
+                });
+            },
+            playSuccess: function () {
+                beginPlayback('success');
+                return resumeContext().then(function () {
+                    return playViaWebAudio('success');
+                }).then(function (ok) {
+                    if (ok) return true;
+                    return tryPlayHtmlAudio('success');
+                }).then(function (ok) {
+                    if (ok) return true;
+                    return playSuccessFallback();
                 });
             },
             getState: function () {
