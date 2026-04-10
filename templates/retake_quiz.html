@@ -476,6 +476,89 @@
     .log-line.warn { color: #fde047; }
     .log-line.info { color: #67e8f9; }
 
+    .shell.hidden-flow {
+        display: none;
+    }
+
+    .success-stage {
+        margin-top: 18px;
+        border-radius: 30px;
+        background: rgba(8, 14, 25, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(22px);
+        overflow: hidden;
+    }
+
+    .success-stage.hidden {
+        display: none;
+    }
+
+    .hidden {
+        display: none;
+    }
+
+    .success-stage-inner {
+        padding: 28px 22px;
+    }
+
+    .success-stage-loading {
+        display: grid;
+        justify-items: center;
+        gap: 18px;
+        text-align: center;
+        min-height: 360px;
+    }
+
+    .success-stage-final {
+        display: none;
+        gap: 16px;
+    }
+
+    .success-stage-final.show {
+        display: grid;
+    }
+
+    .success-stage-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .success-stage-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 16px;
+        border-radius: 14px;
+        text-decoration: none;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        transition: transform 0.16s ease, opacity 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .success-stage-action:hover {
+        transform: translateY(-1px);
+    }
+
+    .success-stage-action.primary {
+        color: #04111a;
+        background: linear-gradient(135deg, #f6c453, #86efac);
+        box-shadow: 0 16px 36px rgba(246, 196, 83, 0.18);
+    }
+
+    .success-stage-action.secondary {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .success-stage-note {
+        color: rgba(226, 232, 240, 0.72);
+        font-size: 0.92rem;
+        line-height: 1.6;
+    }
+
     .quiz-card,
     .status-card,
     .summary-card {
@@ -615,6 +698,56 @@
         </section>
     </div>
 
+    <section class="success-stage hidden" id="successStage">
+        <audio id="successAudio" preload="auto" playsinline webkit-playsinline crossorigin="anonymous" src="https://d3iyagsnytq9oz.cloudfront.net/static/sfx/COURSE%20COMPLETE.mp3"></audio>
+
+        <div class="success-stage-inner success-stage-loading" id="successLoadingStage">
+            <div class="kicker">Completion in progress</div>
+            <div class="loader-ring" aria-hidden="true">
+                <div class="loader-core"></div>
+            </div>
+            <h1 class="title" style="margin: 0;">Quiz complete</h1>
+            <p class="subtitle" style="text-align: center; max-width: 55ch;">The screen has shifted. The completion sound is starting from the final answer gesture, then the full success view will appear after the transition settles.</p>
+            <div class="sound-wave" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <div class="status-banner show success" id="successLoadingStatus">Starting completion audio...</div>
+        </div>
+
+        <div class="success-stage-inner success-stage-final" id="successFinalStage">
+            <div class="success-stage-actions">
+                <div class="summary-card" style="flex: 1 1 220px;">
+                    <div class="summary-label">Attempt</div>
+                    <div class="summary-value" id="finalAttempt">Attempt 1</div>
+                </div>
+                <div class="summary-card" style="flex: 1 1 220px;">
+                    <div class="summary-label">Score</div>
+                    <div class="summary-value" id="finalScore">8 / 8</div>
+                </div>
+                <div class="summary-card" style="flex: 1 1 220px;">
+                    <div class="summary-label">Completed</div>
+                    <div class="summary-value" id="finalTime">Just now</div>
+                </div>
+            </div>
+
+            <div class="summary-card">
+                <div class="summary-label">What happened</div>
+                <div class="summary-note">The page shifted first, then the completion sound continued from the same final tap so Safari gets a real user-initiated playback path.</div>
+            </div>
+
+            <div class="success-stage-actions">
+                <a class="success-stage-action primary" href="/retake-quiz/">Run retake again</a>
+                <a class="success-stage-action secondary" href="/">Back to home</a>
+                <a class="success-stage-action secondary" href="#" id="replaySuccessSound">Replay sound</a>
+            </div>
+
+            <div class="success-stage-note" id="successStageNote">If audio is blocked by the browser, replay the sound or restart the retake flow.</div>
+        </div>
+    </section>
+
     <div class="section-label">Console log</div>
     <div class="log-wrap" id="log"></div>
 </div>
@@ -692,6 +825,17 @@
     var summaryProgress = document.getElementById('summaryProgress');
     var statusBanner = document.getElementById('statusBanner');
     var logEl = document.getElementById('log');
+    var shell = document.querySelector('.shell');
+    var successStage = document.getElementById('successStage');
+    var successLoadingStage = document.getElementById('successLoadingStage');
+    var successFinalStage = document.getElementById('successFinalStage');
+    var successAudio = document.getElementById('successAudio');
+    var successLoadingStatus = document.getElementById('successLoadingStatus');
+    var finalAttempt = document.getElementById('finalAttempt');
+    var finalScore = document.getElementById('finalScore');
+    var finalTime = document.getElementById('finalTime');
+    var replaySuccessSound = document.getElementById('replaySuccessSound');
+    var successStageNote = document.getElementById('successStageNote');
 
     function pushLog(message, level) {
         var line = document.createElement('div');
@@ -700,6 +844,95 @@
         line.textContent = '[' + timestamp + '] ' + message;
         logEl.appendChild(line);
         logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setSuccessLoadingMessage(message) {
+        if (successLoadingStatus) {
+            successLoadingStatus.textContent = message;
+        }
+    }
+
+    function updateSuccessSummary() {
+        if (finalAttempt) {
+            finalAttempt.textContent = 'Attempt ' + attempt;
+        }
+        if (finalScore) {
+            finalScore.textContent = total + ' / ' + total;
+        }
+        if (finalTime) {
+            finalTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+    }
+
+    function playSuccessAudio() {
+        if (!successAudio) return Promise.resolve(false);
+
+        try {
+            successAudio.muted = true;
+            successAudio.volume = 1;
+            successAudio.currentTime = 0;
+        } catch (err) {}
+
+        var playResult;
+        try {
+            playResult = successAudio.play();
+        } catch (err2) {
+            return Promise.resolve(false);
+        }
+
+        function startPlayback() {
+            pushLog('Completion audio started', 'ok');
+            setSuccessLoadingMessage('Completion sound is playing...');
+            window.setTimeout(function () {
+                try {
+                    successAudio.muted = false;
+                    pushLog('Completion audio unmuted after shift', 'ok');
+                } catch (err3) {
+                    pushLog('Completion audio could not unmute', 'warn');
+                }
+            }, 260);
+            return true;
+        }
+
+        if (!playResult || typeof playResult.then !== 'function') {
+            return Promise.resolve(startPlayback());
+        }
+
+        return playResult.then(startPlayback).catch(function (err) {
+            pushLog('Completion audio blocked: ' + (err && err.message ? err.message : 'play failed'), 'warn');
+            if (window.SoundManager && typeof window.SoundManager.playSuccess === 'function') {
+                return window.SoundManager.playSuccess().then(function (managerOk) {
+                    if (managerOk) {
+                        pushLog('Completion audio fallback played through SoundManager', 'ok');
+                        setSuccessLoadingMessage('Completion sound is playing...');
+                    }
+                    return managerOk;
+                });
+            }
+            return false;
+        });
+    }
+
+    function showSuccessStage() {
+        if (shell) {
+            shell.classList.add('hidden-flow');
+        }
+        if (successStage) {
+            successStage.classList.remove('hidden');
+        }
+        updateSuccessSummary();
+        if (successAudio) {
+            successAudio.load();
+        }
+    }
+
+    function revealFinalStage() {
+        if (successLoadingStage) {
+            successLoadingStage.classList.add('hidden');
+        }
+        if (successFinalStage) {
+            successFinalStage.classList.add('show');
+        }
     }
 
     function setBanner(message, tone) {
@@ -827,10 +1060,28 @@
     function finishAttempt() {
         if (wrongCount === 0) {
             saveCompletionSummary();
-            setBanner('Perfect run locked. Opening the success screen now.', 'success');
+            setBanner('Perfect run locked. Shifting to the success screen...', 'success');
             nextBtn.disabled = true;
-            pushLog('Perfect attempt achieved, navigating to success screen', 'ok');
-            window.location.replace('/retake-quiz/success/');
+            pushLog('Perfect attempt achieved, revealing success screen', 'ok');
+
+            showSuccessStage();
+            Promise.resolve(playSuccessAudio()).then(function (ok) {
+                try {
+                    sessionStorage.setItem('retakeQuizSuccessAudioPlayed', ok ? 'yes' : 'no');
+                } catch (err) {}
+
+                if (ok) {
+                    window.setTimeout(function () {
+                        setSuccessLoadingMessage('Completion sound finished. Revealing success details...');
+                        revealFinalStage();
+                    }, 2100);
+                } else {
+                    setSuccessLoadingMessage('Audio was blocked, revealing the success details anyway.');
+                    window.setTimeout(function () {
+                        revealFinalStage();
+                    }, 650);
+                }
+            });
             return;
         }
 
@@ -856,6 +1107,17 @@
         if (resetTimer) window.clearTimeout(resetTimer);
         if (redirectTimer) window.clearTimeout(redirectTimer);
     });
+
+    if (replaySuccessSound) {
+        replaySuccessSound.addEventListener('click', function (event) {
+            event.preventDefault();
+            playSuccessAudio().then(function (ok) {
+                if (!ok && successStageNote) {
+                    successStageNote.textContent = 'The browser blocked replay, but the quiz is still complete.';
+                }
+            });
+        });
+    }
 
     renderQuestion();
     pushLog('Retake quiz loaded', 'info');
