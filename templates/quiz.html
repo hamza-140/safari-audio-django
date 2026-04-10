@@ -228,12 +228,38 @@
             text: 'Which API should be resumed after tab restore/interruption for cross-device audio reliability?',
             options: ['Canvas API', 'Fetch API', 'AudioContext', 'WebSocket'],
             correct: 2
+        },
+        {
+            text: 'Which file is commonly used on Render to define the start command for a web service?',
+            options: ['Dockerfile', 'Procfile', 'runtime.txt', 'build.sh'],
+            correct: 1
+        },
+        {
+            text: 'What is the safest default DEBUG value in production?',
+            options: ['True', 'None', 'False', 'Auto'],
+            correct: 2
+        },
+        {
+            text: 'Which middleware is used here to serve static files efficiently in production?',
+            options: ['CorsMiddleware', 'CacheMiddleware', 'WhiteNoiseMiddleware', 'GZipMiddleware'],
+            correct: 2
+        },
+        {
+            text: 'For broad mobile compatibility, when should you trigger quiz feedback audio?',
+            options: ['On page load', 'After user answer tap', 'After 5 seconds delay', 'Only on desktop'],
+            correct: 1
+        },
+        {
+            text: 'If remote MP3 playback fails on iOS, what should the app do?',
+            options: ['Do nothing', 'Show alert and stop', 'Retry forever', 'Fallback to synthesized tone'],
+            correct: 3
         }
     ];
 
     var current = 0;
     var score = 0;
     var answered = false;
+    var quizDone = false;
 
     var progressEl = document.getElementById('progress');
     var questionEl = document.getElementById('question');
@@ -269,10 +295,12 @@
     function renderQuestion() {
         var q = questions[current];
         answered = false;
+        quizDone = false;
         progressEl.textContent = 'Question ' + (current + 1) + ' of ' + questions.length;
         questionEl.textContent = q.text;
         resultEl.textContent = '';
         resultEl.className = 'result';
+        nextBtn.textContent = 'Next';
         nextBtn.disabled = true;
         answersEl.innerHTML = '';
 
@@ -336,18 +364,25 @@
     }
 
     nextBtn.addEventListener('click', function () {
+        if (quizDone) {
+            window.location.href = '/quiz/';
+            return;
+        }
+
         if (current < questions.length - 1) {
             current += 1;
             renderQuestion();
             return;
         }
 
+        quizDone = true;
         questionEl.textContent = 'Quiz complete';
         progressEl.textContent = 'Done';
         answersEl.innerHTML = '';
         resultEl.textContent = 'Final score: ' + score + ' / ' + questions.length;
         resultEl.className = 'result ' + (score === questions.length ? 'ok' : 'err');
-        nextBtn.disabled = true;
+        nextBtn.textContent = 'Retake';
+        nextBtn.disabled = false;
     });
 
     renderQuestion();
